@@ -10,8 +10,8 @@ CLR_IMG="clear-${CLR_VER}-kvm.img"
 MOUNT="${OUTDIR}/temp"
 : ${BOX_NAME:="clearlinux"}
 : ${OWNER:="gmmaha"}
-: ${REPOSITORY:-${OWNER}/${BOX_NAME}}
-: ${VAGRANT_CLOUD_TOKEN:-$(grep vagrantup ~/.netrc | awk '{print $6}')}
+: ${REPOSITORY:=${OWNER}/${BOX_NAME}}
+: ${VAGRANT_CLOUD_TOKEN:=$(grep vagrantup ~/.netrc | awk '{print $6}')}
 
 function build()
 {
@@ -29,7 +29,7 @@ function build()
   sudo mount /dev/nbd10p3 ${MOUNT}
 
   echo "Setup vagrant stuff..."
-  sudo chroot ${MOUNT} bash -c 'useradd -m vagrant'
+  sudo chroot ${MOUNT} bash -c 'useradd -m vagrant -p $(echo "vagrant" | openssl passwd -1 -stdin)'
   sudo chroot ${MOUNT} bash -c 'mkdir -p /etc/sudoers.d/'
   sudo chroot ${MOUNT} bash -c 'echo "vagrant ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/vagrant'
   sudo chroot ${MOUNT} bash -c 'mkdir -p /home/vagrant/.ssh'
@@ -40,11 +40,11 @@ function build()
   sudo chroot ${MOUNT} bash -c 'chown -R vagrant /home/vagrant/.ssh'
   sudo chroot ${MOUNT} bash -c 'mkdir -p /etc/ssh'
   sudo chroot ${MOUNT} bash -c 'cat << EOF > etc/ssh/sshd_config
-  PubKeyAuthentication yes
-  AuthorizedKeysFile %h/.ssh/authorized_keys
-  PermitEmptyPasswords no
-  PasswordAuthentication no
-  EOF'
+PubKeyAuthentication yes
+AuthorizedKeysFile %h/.ssh/authorized_keys
+PermitEmptyPasswords no
+EOF
+'
   sudo chroot ${MOUNT} bash -c 'systemctl enable sshd'
 
   echo "Start packaging..."
@@ -82,10 +82,10 @@ function upload()
     --data '
   {
     "version": {
-      "version": ${VER},
+      "version": "'"${VER}"'",
       "description": ""
     }
-  }'
+  }' | jq .
 
   echo "Create provider for release..."
   curl --header "Content-Type: application/json" \
@@ -96,20 +96,20 @@ function upload()
     "provider": {
       "name": "libvirt"
     }
-  }'
+  }' | jq .
 
   echo "Upload image..."
   response=$(curl \
     --header "Authorization: Bearer ${VAGRANT_CLOUD_TOKEN}" \
     https://app.vagrantup.com/api/v1/box/${REPOSITORY}/version/${VER}/provider/libvirt/upload)
-  upload_path=$(echo "${response}" | jq .upload_path)
-  curl "${upload_path}" --request PUT \
+  upload_path=$(echo "${response}" | jq .upload_path | tr -d \")
+  curl ${upload_path} --request PUT \
     --upload_file ${BOX_FILE}
 
   echo "Releasing...."
   curl --header "Authorization: Bearer ${VAGRANT_CLOUD_TOKEN}" \
     https://app.vagrantup.com/api/v1/box/${REPOSITORY}/version/${VER}/release \
-    --request PUT
+    --request PUT | jq .
 }
 
 if [[ "$1" =~ ^(build|upload)$ ]]; then
