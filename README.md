@@ -1,6 +1,9 @@
 # clearlinux
 Stuff i have as extensions for clearlinux
 
+## Multi-Node
+My own vagrant file to spin up 3 nodes with 2 drives of 10G each, a private network and support for proxy
+
 ## Libvirt Images
 
 Few things are needed for this to work
