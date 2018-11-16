@@ -1,13 +1,15 @@
-#!/bin/bash -x
+#!/bin/bash
 
 set -o errexit
+set -o nounset
 
 # Simple script to generate an image for vagrant on libvirt for Clear Releases
 
-OUTDIR=$(mktemp -d -p `pwd` -t clr-vag.XXXXX)
+JOB=""
+VER=""
+BOX=""
 CLR_VER=$(curl -s https://download.clearlinux.org/latest)
 CLR_IMG="clear-${CLR_VER}-kvm.img"
-MOUNT="${OUTDIR}/temp"
 : ${BOX_NAME:="clearlinux"}
 : ${OWNER:="gmmaha"}
 : ${REPOSITORY:=${OWNER}/${BOX_NAME}}
@@ -15,6 +17,8 @@ MOUNT="${OUTDIR}/temp"
 
 function build()
 {
+  OUTDIR=$(mktemp -d -p `pwd` -t clr-vag.XXXXX)
+  MOUNT="${OUTDIR}/temp"
   echo "Getting clear version ${CLR_VER}..."
   curl --progress-bar https://download.clearlinux.org/image/${CLR_IMG}.xz -o ${OUTDIR}/${CLR_IMG}.xz
   unxz -v ${OUTDIR}/${CLR_IMG}.xz -c > ${OUTDIR}/${CLR_IMG}
@@ -65,16 +69,14 @@ EOF
 
 function upload()
 {
-  if [ -z "$1" ]; then
+  if [ -z "$VER" ]; then
     echo "Need version"
     exit 1
   fi
-  if [ -z "$2" ]; then
+  if [ -z "$BOX" ]; then
     echo "Need box path"
     exit 1
   fi
-  VER="$1"
-  BOX_FILE="$2"
   echo "Create release for box..."
   curl --header "Content-Type: application/json" \
     --header "Authorization: Bearer ${VAGRANT_CLOUD_TOKEN}" \
@@ -104,7 +106,7 @@ function upload()
     https://app.vagrantup.com/api/v1/box/${REPOSITORY}/version/${VER}/provider/libvirt/upload)
   upload_path=$(echo "${response}" | jq .upload_path | tr -d \")
   curl ${upload_path} --request PUT \
-    --upload_file ${BOX_FILE}
+    --upload-file ${BOX}
 
   echo "Releasing...."
   curl --header "Authorization: Bearer ${VAGRANT_CLOUD_TOKEN}" \
@@ -112,8 +114,43 @@ function upload()
     --request PUT | jq .
 }
 
-if [[ "$1" =~ ^(build|upload)$ ]]; then
-  ${1} ${@}
-else
-  echo "Need either build or upload"
-fi
+function test()
+{
+  # Remove previous boxes
+  vagrant box remove clear-test
+  sudo virsh vol-delete clear-test_vagrant_box_image_0.img --pool default
+  vagrant box add --name clear-test ${BOX}
+  vagrant up --provider=libvirt
+}
+
+function usage()
+{
+  echo ""
+  echo " Usage: ${0} [-b|--build] [-u|--upload] [-t|--test]"
+  echo ""
+  echo "b|build: Build the box"
+  echo "u|upload: Upload the box"
+  echo "t|test: test the box"
+  echo ""
+  exit 1
+}
+
+ARGS=$(getopt -o bu:t: -l build,upload:,test: -- "$@");
+
+if [ $# -eq 0 ]; then usage; fi
+
+eval set -- "$ARGS"
+
+while true; do
+  case "$1" in
+    -b|--build) JOB="build"; shift ;;
+    -u|--upload) JOB="upload"; VER="$2"; BOX="$3"; shift 3;;
+    -t|--test) JOB="test"; BOX="$2"; shift 2;;
+    --) shift; break;;
+    *) usage;;
+  esac
+done
+
+echo "Starting ${JOB}"
+
+${JOB}
