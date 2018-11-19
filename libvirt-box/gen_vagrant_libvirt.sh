@@ -23,13 +23,21 @@ function build()
   curl --progress-bar https://download.clearlinux.org/image/${CLR_IMG}.xz -o ${OUTDIR}/${CLR_IMG}.xz
   unxz -v ${OUTDIR}/${CLR_IMG}.xz -c > ${OUTDIR}/${CLR_IMG}
 
+  # Resize the image
+  qemu-img resize ${OUTDIR}/${CLR_IMG} 40G
+
   trap "{ sudo umount ${MOUNT} ; sudo qemu-nbd -d nbd10 ; }" EXIT ERR
   echo "Mount image to muddle with it..."
   mkdir ${MOUNT}
   sudo modprobe nbd max_part=63
   sudo qemu-nbd -f raw -c /dev/nbd10 ${OUTDIR}/${CLR_IMG}
   sleep 2
+
+  #Grow partition size to end of device
   sudo partprobe /dev/nbd10
+  sudo parted /dev/nbd10 resizepart fix 3 100%
+  sudo e2fsck -f /dev/nbd10p3
+  sudo resize2fs /dev/nbd10p3
   sudo mount /dev/nbd10p3 ${MOUNT}
 
   echo "Setup vagrant stuff..."
@@ -74,7 +82,7 @@ function upload()
     exit 1
   fi
   if [ -z "$BOX" ]; then
-    echo "Need box path"
+    echo "Need to pass '-f <file.box>' with upload"
     exit 1
   fi
   echo "Create release for box..."
@@ -130,12 +138,14 @@ function usage()
   echo ""
   echo "b|build: Build the box"
   echo "u|upload: Upload the box"
+  echo "f|file: Path to file to upload to vagrant"
   echo "t|test: test the box"
+  echo "h|help: Show help"
   echo ""
   exit 1
 }
 
-ARGS=$(getopt -o bu:t: -l build,upload:,test: -- "$@");
+ARGS=$(getopt -o bhf:u:t: -l build,help,file:,upload:,test: -- "$@");
 
 if [ $# -eq 0 ]; then usage; fi
 
@@ -144,8 +154,10 @@ eval set -- "$ARGS"
 while true; do
   case "$1" in
     -b|--build) JOB="build"; shift ;;
-    -u|--upload) JOB="upload"; VER="$2"; BOX="$3"; shift 3;;
+    -u|--upload) JOB="upload"; VER="$2"; shift 2;;
+    -f|--file) BOX="$2"; shift 2;;
     -t|--test) JOB="test"; BOX="$2"; shift 2;;
+    -h|--help) usage;;
     --) shift; break;;
     *) usage;;
   esac
