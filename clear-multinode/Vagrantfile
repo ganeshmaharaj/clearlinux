@@ -22,8 +22,9 @@ if not File.exists?($loader)
   system('curl -O https://download.clearlinux.org/image/OVMF.fd')
 end
 
+# We need v 1.0.14 or above for this vagrantfile to work.
 unless Vagrant.has_plugin?("vagrant-guests-clearlinux")
-  raise 'clearlinux guest plugin not installed'
+  system "vagrant plugin install vagrant-guests-clearlinux"
 end
 
 # Install plugins that you might need.
