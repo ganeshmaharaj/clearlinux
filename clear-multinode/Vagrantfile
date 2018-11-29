@@ -58,6 +58,7 @@ Vagrant.configure("2") do |config|
       c.vm.provider :libvirt do |lv|
         lv.loader = $loader
         lv.cpu_mode = "host-passthrough"
+        lv.nested = true
         lv.cpus = 2
         lv.memory = 4096
         (1..$disks).each do |d|
