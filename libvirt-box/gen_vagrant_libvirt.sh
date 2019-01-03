@@ -8,7 +8,7 @@ set -o nounset
 JOB=""
 VER=""
 BOX=""
-CLR_VER=$(curl -s https://download.clearlinux.org/latest)
+: ${CLR_VER:=$(curl -s https://download.clearlinux.org/latest)}
 CLR_IMG="clear-${CLR_VER}-kvm.img"
 : ${BOX_NAME:="clearlinux"}
 : ${OWNER:="gmmaha"}
@@ -20,7 +20,7 @@ function build()
   OUTDIR=$(mktemp -d -p `pwd` -t clr-vag.XXXXX)
   MOUNT="${OUTDIR}/temp"
   echo "Getting clear version ${CLR_VER}..."
-  curl --progress-bar https://download.clearlinux.org/image/${CLR_IMG}.xz -o ${OUTDIR}/${CLR_IMG}.xz
+  curl --progress-bar https://download.clearlinux.org/releases/${CLR_VER}/clear/${CLR_IMG}.xz -o ${OUTDIR}/${CLR_IMG}.xz
   unxz -v ${OUTDIR}/${CLR_IMG}.xz -c > ${OUTDIR}/${CLR_IMG}
 
   # Resize the image
@@ -30,6 +30,7 @@ function build()
   echo "Mount image to muddle with it..."
   mkdir ${MOUNT}
   sudo modprobe nbd max_part=63
+  sleep 2
   sudo qemu-nbd -f raw -c /dev/nbd10 ${OUTDIR}/${CLR_IMG}
   sleep 2
 
@@ -39,6 +40,9 @@ function build()
   sudo e2fsck -f /dev/nbd10p3
   sudo resize2fs /dev/nbd10p3
   sudo mount /dev/nbd10p3 ${MOUNT}
+
+  echo "Set root password to vagrant..."
+  sudo chroot ${MOUNT} bash -c 'usermod --password vagrant root'
 
   echo "Setup vagrant stuff..."
   sudo chroot ${MOUNT} bash -c 'useradd -m vagrant -p $(echo "vagrant" | openssl passwd -1 -stdin)'
@@ -125,8 +129,8 @@ function upload()
 function test()
 {
   # Remove previous boxes
-  vagrant box remove clear-test
-  sudo virsh vol-delete clear-test_vagrant_box_image_0.img --pool default
+  vagrant box remove clear-test || true
+  sudo virsh vol-delete clear-test_vagrant_box_image_0.img --pool default || true
   vagrant box add --name clear-test ${BOX}
   vagrant up --provider=libvirt
 }
